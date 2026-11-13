@@ -2,12 +2,13 @@
 
 Dự án thiết kế hệ thống **báo cháy gia đình thông minh** phát hiện rò rỉ khí gas/khói (cảm biến **MQ-2**) và nhiệt độ cao (cảm biến **DS18B20**) trên vi điều khiển **ESP32** chạy hệ điều hành thời gian thực **FreeRTOS** (đa nhân Core 0 & Core 1), truyền dữ liệu qua **MQTT Broker** và giám sát/điều khiển trực tiếp trên **Web Dashboard**.
 
-Toàn bộ mã nguồn được đặt gọn trong **1 thư mục duy nhất** gồm:
-- [`sketch.ino`](sketch.ino) — Mã nguồn ESP32 FreeRTOS + MQTT
-- [`diagram.json`](diagram.json) — Sơ đồ mạch Wokwi
-- [`libraries.txt`](libraries.txt) — Danh sách thư viện Wokwi (`OneWire`, `DallasTemperature`, `PubSubClient`, `ArduinoJson`)
-- [`index.html`](index.html) — Giao diện Web Dashboard theo dõi & điều khiển qua MQTT WebSocket
-- [`README.md`](README.md) — Báo cáo đầy đủ bài Lab 3
+Cấu trúc thư mục dự án gồm:
+- [`wokwi/sketch.ino`](wokwi/sketch.ino) — Mã nguồn ESP32 FreeRTOS + MQTT
+- [`wokwi/diagram.json`](wokwi/diagram.json) — Sơ đồ mạch Wokwi
+- [`wokwi/link_wokwi.txt`](wokwi/link_wokwi.txt) — Link mô phỏng trực tiếp trên Wokwi
+- [`web/index.html`](web/index.html) — Giao diện Web Dashboard theo dõi & điều khiển qua MQTT WebSocket
+- [`baocao/Dương Quang Huy - 231432251.docx`](baocao/Dương%20Quang%20Huy%20-%20231432251.docx) — File báo cáo Word đầy đủ
+- [`README.md`](README.md) — Tài liệu & kết quả bài Lab 3
 
 ---
 
@@ -59,17 +60,20 @@ Hệ điều hành thời gian thực (RTOS) được thiết kế chuyên biệ
 
 ## 2. Thiết kế phần cứng & Sơ đồ kết nối Wokwi
 
-### Bảng kết nối chân ESP32 (khớp [`diagram.json`](diagram.json))
+- **Link mô phỏng Wokwi:** https://wokwi.com/projects/480561789691719681
 
-| Linh kiện | ID trên Wokwi | Chân linh kiện | Chân ESP32 | Ghi chú kỹ thuật |
+![Sơ đồ mạch Wokwi](images/so-do-mach-wokwi.png)
+
+### Bảng kết nối chân ESP32 (khớp [`wokwi/diagram.json`](wokwi/diagram.json))
+
+| Linh kiện | ID & Thuộc tính trên Wokwi | Nối dây chi tiết trong `diagram.json` | Chân ESP32 | Ghi chú kỹ thuật |
 | :--- | :--- | :--- | :--- | :--- |
-| **Cảm biến Khí Gas/Khói MQ-2** | `gas1` (`wokwi-gas-sensor`) | `VCC` / `GND` / `AOUT` | `5V` / `GND.1` / **GPIO 34** | Kênh **ADC1_CH6** (không dùng ADC2 vì xung đột Wi-Fi trên ESP32) |
-| **Cảm biến Nhiệt độ DS18B20** | `temp1` (`wokwi-ds18b20`) | `VCC` / `GND` / `DQ` | `5V` / `GND.1` / **GPIO 4** | Giao tiếp 1-Wire (`OneWire` + `DallasTemperature`) |
-| **Quạt thông gió (LED Xanh lá)** | `led2` + `r1` (1kΩ) | `A` -> `r1` / `C` -> `GND.2` | **GPIO 18** | Bật khi Gas >= 50% (Auto) hoặc nút bấm Web (Manual) |
-| **Máy bơm nước (LED Đỏ)** | `led1` + `r2` (1kΩ) | `A` -> `r2` / `C` -> `GND.2` | **GPIO 19** | Bật khi Nhiệt độ >= 45°C (Auto) hoặc nút bấm Web (Manual) |
-| **Còi báo động (Buzzer)** | `bz1` (`wokwi-buzzer`) | `2` (+) / `1` (-) | **GPIO 5** / `GND.1` | Phát âm báo `1500Hz` khi Gas hoặc Nhiệt độ vượt ngưỡng |
-
-> **Lưu ý sửa lỗi nối chân so với bản nháp gốc:** Ở bản nháp có một số dây nối vào `esp:CMD` (chân Flash CMD / GPIO 11 của ESP32), đã được sửa về `esp:GND.1` để cấp mass chuẩn cho `gas1`, `temp1` và `bz1` hoạt động ổn định trên Wokwi.
+| **Cảm biến Khí Gas/Khói MQ-2** | `gas1` (`wokwi-gas-sensor`) | `gas1:VCC` → `esp:5V`<br>`gas1:GND` → `esp:GND.1`<br>`gas1:AOUT` → `esp:34` | **5V**, **GND.1**, **GPIO 34** | Kênh **ADC1_CH6** (không dùng ADC2 vì xung đột Wi-Fi trên ESP32) |
+| **Cảm biến Nhiệt độ DS18B20** | `temp1` (`wokwi-ds18b20`) | `esp:5V` → `temp1:VCC`<br>`temp1:GND` → `esp:GND.1`<br>`temp1:DQ` → `esp:4` | **5V**, **GND.1**, **GPIO 4** | Giao tiếp 1-Wire (`OneWire` + `DallasTemperature`) |
+| **Quạt thông gió (LED Xanh lá)** | `led2` (`color: green`, `label: "QUAT"`) + `r1` (`1000Ω`) | `led2:A` → `r1:1`, `r1:2` → `esp:18`<br>`led2:C` → `esp:GND.2` | **GPIO 18**, **GND.2** | Bật khi Gas >= 50% (Auto) hoặc nút bấm Web (Manual) |
+| **Máy bơm nước (LED Đỏ)** | `led1` (`color: red`, `label: "MAY BOM"`) + `r2` (`1000Ω`) | `led1:A` → `r2:1`, `r2:2` → `esp:19`<br>`esp:GND.2` → `led1:C` | **GPIO 19**, **GND.2** | Bật khi Nhiệt độ >= 45°C (Auto) hoặc nút bấm Web (Manual) |
+| **Còi báo động (Buzzer)** | `bz1` (`wokwi-buzzer`, `volume: 0.1`) | `esp:5` → `bz1:2` (+)<br>`esp:GND.1` → `bz1:1` (-) | **GPIO 5**, **GND.1** | Phát âm báo `1500Hz` khi Gas hoặc Nhiệt độ vượt ngưỡng |
+| **Cổng Serial Monitor** | `$serialMonitor` | `esp:TX` → `$serialMonitor:RX`<br>`esp:RX` → `$serialMonitor:TX` | **TX**, **RX** | In log hoạt động từ Core 0 & Core 1 (`115200 baud`) |
 
 ---
 
@@ -118,7 +122,7 @@ typedef struct {
 
 ## 4. Giao diện Website Giám Sát & Điều Khiển
 
-File giao diện [`index.html`](index.html) sử dụng **HTML/CSS/JS**, **MQTT.js** (WebSocket `wss://broker.emqx.io:8084/mqtt`) và **Chart.js**:
+File giao diện [`web/index.html`](web/index.html) sử dụng **HTML/CSS/JS**, **MQTT.js** (WebSocket `wss://broker.emqx.io:8084/mqtt`) và **Chart.js**:
 - **2 thẻ HTML sử dụng thuộc tính `class`** hiển thị số liệu trực tiếp:
   - `<div class="sensor-value gas-value">-- %</div>` (kèm giá trị PPM).
   - `<div class="sensor-value temp-value">-- °C</div>`.
@@ -130,7 +134,7 @@ File giao diện [`index.html`](index.html) sử dụng **HTML/CSS/JS**, **MQTT.
 
 ---
 
-## 5. Giải thích mã nguồn chính ([`sketch.ino`](sketch.ino))
+## 5. Giải thích mã nguồn chính ([`wokwi/sketch.ino`](wokwi/sketch.ino))
 
 1. **Khởi tạo tại `setup()`:**
    - Khởi tạo `tempSensor.begin()` cho DS18B20 trên GPIO 4, cấu hình các chân `FAN_PIN` (18), `PUMP_PIN` (19), `BUZZER_PIN` (5).
@@ -149,3 +153,44 @@ File giao diện [`index.html`](index.html) sử dụng **HTML/CSS/JS**, **MQTT.
    - Duy trì Wi-Fi (`Wokwi-GUEST`) và kết nối MQTT (`broker.emqx.io:1883`).
    - Đọc dữ liệu từ `dataQueue`, đóng gói JSON bằng `ArduinoJson` và publish lên topic `lab3/fire_alarm/data`.
    - Lắng nghe topic `lab3/fire_alarm/control` qua `mqttCallback()` để cập nhật trạng thái điều khiển từ Web.
+
+---
+
+## 6. Kết quả thực nghiệm & Mô phỏng
+
+### 6.1. Kết quả mô phỏng mạch và Serial Monitor trên Wokwi
+
+![Kết quả mô phỏng Wokwi](images/ket-qua-mo-phong-wokwi.png)
+
+Khi chạy mô phỏng trên Wokwi ([Link project](https://wokwi.com/projects/480561789691719681)), ESP32 kết nối thành công Wi-Fi `Wokwi-GUEST` và MQTT Broker `broker.emqx.io`. Khi tăng nồng độ khí gas lên `88.6%` (`8859 ppm`, ADC `3628`) ở chế độ `AUTO`, LED Xanh (Quạt - GPIO 18) sáng, Còi Buzzer (GPIO 5) phát âm cảnh báo và Serial Monitor ghi nhận rõ hoạt động song song của 2 nhân:
+
+```text
+--------------------------------------------------
+[CORE 1 | TaskReadSensor] Gas ADC: 3628 | Gas: 88.6% (8859 ppm) | Nhiet do (DS18B20): 22.0 C
+[CORE 1 | TaskAlertControl] Mode: AUTO | Quat (LED Xanh GPIO18): BAT | May bom (LED Do GPIO19): TAT | Canh bao: NGUY HIEM!
+[CORE 0 | TaskTransmitData] MQTT TX -> {"gas":88.6,"gas_ppm":8859,"raw_gas":3628,"temp":22,"fan":true,"pump":false,"mode":"auto","gas_alert":true,"temp_alert":false}
+```
+
+### 6.2. Giao diện Web Dashboard ở trạng thái Bình thường / Chế độ Manual
+
+![Giao diện Web trạng thái an toàn](images/ket-qua-web-an-toan.png)
+
+- Cảm biến MQ-2 đọc được `48.8%` (`4881 ppm` < ngưỡng `50%`) -> trạng thái **An toàn**.
+- Cảm biến DS18B20 đọc được `22.0 °C` (< ngưỡng `45°C`) -> trạng thái **Bình thường**.
+- Người dùng có thể chuyển sang chế độ **MANUAL (Thủ công)** để chủ động bấm nút **BẬT QUẠT** / **BẬT MÁY BƠM** gửi lệnh JSON xuống ESP32 qua topic `lab3/fire_alarm/control`.
+
+### 6.3. Giao diện Web Dashboard khi Cảnh báo Rò rỉ Khí Gas (Chế độ Auto)
+
+![Giao diện Web khi cảnh báo khí gas vượt ngưỡng](images/ket-qua-web-canh-bao.png)
+
+- Khi nồng độ khí gas tăng lên `88.6%` (`8859 ppm` >= `50%`), banner cảnh báo đỏ **CẢNH BÁO CHÁY / RÒ RỈ: Khí Gas cao (88.6%)** tự động xuất hiện cùng nhãn **VƯỢT NGƯỠNG!**.
+- Ở chế độ **AUTO (Tự động)**, hệ thống tự động kích hoạt **Quạt Thông Gió (LED Xanh - GPIO 18)** sang trạng thái **ĐANG BẬT** và đồng bộ tức thời lên biểu đồ thời gian thực.
+
+### 6.4. Bảng tổng hợp kết quả kiểm thử các kịch bản
+
+| Kịch bản kiểm thử | Giá trị đầu vào | Chế độ | Quạt (GPIO 18) | Máy bơm (GPIO 19) | Còi Buzzer (GPIO 5) | Hiển thị trên Web Dashboard |
+| :--- | :--- | :---: | :---: | :---: | :---: | :--- |
+| **Bình thường** | Gas `< 50%` (`48.8%`), Nhiệt độ `< 45°C` (`22.0°C`) | `AUTO` | TẮT | TẮT | TẮT | Thẻ hiển thị **An toàn** / **Bình thường** |
+| **Rò rỉ Khí Gas** | Gas `>= 50%` (`88.6%`), Nhiệt độ `< 45°C` (`22.0°C`) | `AUTO` | **BẬT** | TẮT | **Kêu `1500Hz`** | Banner **CẢNH BÁO**, Gas **VƯỢT NGƯỠNG!**, Quạt **ĐANG BẬT** |
+| **Nhiệt độ cao** | Gas `< 50%`, Nhiệt độ `>= 45°C` | `AUTO` | TẮT | **BẬT** | **Kêu `1500Hz`** | Banner **CẢNH BÁO**, Nhiệt độ **VƯỢT NGƯỠNG!**, Bơm **ĐANG BẬT** |
+| **Điều khiển từ xa** | Nhấn nút `BẬT QUẠT` / `BẬT MÁY BƠM` trên Web | `MANUAL` | Theo nút Web | Theo nút Web | Kêu khi vượt ngưỡng | Chuyển badge sang **MANUAL (Thủ công)**, đồng bộ trạng thái |
