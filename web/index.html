@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hệ Thống Báo Cháy Gia Đình - ESP32 FreeRTOS &amp; MQTT</title>
+  <!-- MQTT.js & Chart.js CDN -->
+  <script src="https://unpkg.com/mqtt@5.3.5/dist/mqtt.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg-color: #0f172a;
+      --card-bg: #1e293b;
+      --card-border: #334155;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --gas-color: #f59e0b;
+      --temp-color: #ef4444;
+      --fan-color: #22c55e;
+      --pump-color: #ef4444;
+      --safe-color: #10b981;
+      --danger-color: #ef4444;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      min-height: 100vh;
+      padding: 24px;
+      line-height: 1.5;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    header {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--card-border);
+    }
+
+    .title-group h1 {
+      font-size: 1.65rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .title-group p {
+      color: var(--text-muted);
+      font-size: 0.92rem;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      font-size: 0.88rem;
+      font-weight: 600;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background-color: #ef4444;
+      transition: background-color 0.3s;
+    }
+
+    .status-dot.connected {
+      background-color: var(--safe-color);
+      box-shadow: 0 0 10px var(--safe-color);
+    }
+
+    .alert-banner {
+      display: none;
+      padding: 14px 20px;
+      border-radius: 12px;
+      background: rgba(239, 68, 68, 0.16);
+      border: 1px solid var(--danger-color);
+      color: #fecaca;
+      font-weight: 600;
+      margin-bottom: 20px;
+      align-items: center;
+      justify-content: space-between;
+      animation: pulseAlert 1.5s infinite;
+    }
+
+    .alert-banner.active {
+      display: flex;
+    }
+
+    @keyframes pulseAlert {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.35); }
+      50% { box-shadow: 0 0 18px 2px rgba(239, 68, 68, 0.45); }
+    }
+
+    /* Config bar */
+    .config-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: flex-end;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 24px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      flex: 1;
+      min-width: 180px;
+    }
+
+    .field label {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .field input {
+      background: #0f172a;
+      border: 1px solid var(--card-border);
+      color: var(--text-main);
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+    }
+
+    .btn-small {
+      padding: 9px 16px;
+      border: none;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      background: #334155;
+      color: #fff;
+      transition: background 0.2s;
+    }
+
+    .btn-small:hover {
+      background: #475569;
+    }
+
+    .btn-primary {
+      background: #2563eb;
+    }
+
+    .btn-primary:hover {
+      background: #1d4ed8;
+    }
+
+    /* Grid cards */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 20px;
+      margin-bottom: 24px;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      font-weight: 600;
+    }
+
+    .badge {
+      padding: 3px 10px;
+      border-radius: 999px;
+      font-size: 0.76rem;
+      font-weight: 700;
+      background: rgba(16, 185, 129, 0.15);
+      color: #6ee7b7;
+    }
+
+    .badge.danger {
+      background: rgba(239, 68, 68, 0.2);
+      color: #fca5a5;
+    }
+
+    /* Thẻ HTML class hiển thị dữ liệu số theo yêu cầu đề bài */
+    .sensor-value {
+      font-size: 2.5rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+    }
+
+    .gas-value {
+      color: var(--gas-color);
+    }
+
+    .temp-value {
+      color: var(--temp-color);
+    }
+
+    .sub-metric {
+      font-size: 0.88rem;
+      color: var(--text-muted);
+    }
+
+    /* Control panel */
+    .control-section {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 20px;
+      margin-bottom: 24px;
+    }
+
+    .control-header {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .control-header h2 {
+      font-size: 1.15rem;
+    }
+
+    .mode-switch {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .buttons-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 16px;
+    }
+
+    .actuator-box {
+      background: #0f172a;
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .actuator-info h3 {
+      font-size: 1rem;
+      margin-bottom: 4px;
+    }
+
+    .actuator-status {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    .actuator-status strong.on {
+      color: var(--safe-color);
+    }
+
+    /* 2 Nút button điều khiển cơ cấu chấp hành (Quạt & Máy bơm) */
+    .control-btn {
+      padding: 12px 18px;
+      border-radius: 10px;
+      border: none;
+      font-size: 0.92rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s;
+      color: #fff;
+      min-width: 145px;
+    }
+
+    .fan-btn {
+      background: #334155;
+    }
+
+    .fan-btn.active {
+      background: var(--fan-color);
+      color: #052e16;
+      box-shadow: 0 0 14px rgba(34, 197, 94, 0.45);
+    }
+
+    .pump-btn {
+      background: #334155;
+    }
+
+    .pump-btn.active {
+      background: var(--pump-color);
+      box-shadow: 0 0 14px rgba(239, 68, 68, 0.45);
+    }
+
+    .mode-btn {
+      padding: 8px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--card-border);
+      background: #0f172a;
+      color: var(--text-main);
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .mode-btn.manual {
+      background: #7c3aed;
+      border-color: #8b5cf6;
+    }
+
+    /* Charts */
+    .charts-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+      gap: 20px;
+    }
+
+    .chart-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 20px;
+    }
+
+    .chart-card h3 {
+      font-size: 1rem;
+      margin-bottom: 12px;
+      color: var(--text-muted);
+    }
+
+    .chart-wrapper {
+      position: relative;
+      height: 260px;
+      width: 100%;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="title-group">
+        <h1>Hệ Thống Báo Cháy Gia Đình (Lab 3 - Đề 3)</h1>
+        <p>ESP32 + FreeRTOS (Dual Core) + MQ-2 &amp; DS18B20 + MQTT Broker</p>
+      </div>
+      <div class="status-pill">
+        <span class="status-dot" id="mqttDot"></span>
+        <span id="mqttStatusText">Đang kết nối MQTT...</span>
+      </div>
+    </header>
+
+    <div class="alert-banner" id="alertBanner">
+      <span id="alertText">CẢNH BÁO: Phát hiện nồng độ khí gas hoặc nhiệt độ vượt ngưỡng an toàn!</span>
+      <span id="alertTime"></span>
+    </div>
+
+    <!-- Cấu hình kết nối MQTT WebSockets -->
+    <div class="config-bar">
+      <div class="field">
+        <label for="brokerInput">MQTT WebSocket Broker</label>
+        <input type="text" id="brokerInput" value="wss://broker.emqx.io:8084/mqtt" />
+      </div>
+      <div class="field">
+        <label for="topicDataInput">Topic Nhận Dữ Liệu</label>
+        <input type="text" id="topicDataInput" value="lab3/fire_alarm/data" />
+      </div>
+      <div class="field">
+        <label for="topicCtrlInput">Topic Điều Khiển</label>
+        <input type="text" id="topicCtrlInput" value="lab3/fire_alarm/control" />
+      </div>
+      <button class="btn-small btn-primary" onclick="connectMQTT()">Kết nối lại</button>
+      <button class="btn-small" id="simBtn" onclick="toggleSimulation()">Chạy Demo Giả Lập</button>
+    </div>
+
+    <!-- 2 Thẻ HTML "class" hiển thị Nồng độ khí gas & Nhiệt độ dạng số -->
+    <section class="metrics-grid">
+      <div class="card">
+        <div class="card-header">
+          <span>NỒNG ĐỘ KHÍ GAS / KHÓI (MQ-2 - GPIO 34)</span>
+          <span class="badge" id="gasBadge">An toàn</span>
+        </div>
+        <div class="sensor-value gas-value">-- %</div>
+        <div class="sub-metric">Ước lượng: <span id="gasPpmText">0</span> ppm (Ngưỡng bật quạt: 50%)</div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span>NHIỆT ĐỘ MÔI TRƯỜNG (DS18B20 - GPIO 4)</span>
+          <span class="badge" id="tempBadge">Bình thường</span>
+        </div>
+        <div class="sensor-value temp-value">-- °C</div>
+        <div class="sub-metric">Cảm biến 1-Wire DS18B20 (Ngưỡng bật bơm: 45°C)</div>
+      </div>
+    </section>
+
+    <!-- 2 Nút button điều khiển Quạt & Máy bơm (chế độ Manual) -->
+    <section class="control-section">
+      <div class="control-header">
+        <h2>Điều Khiển Cơ Cấu Chấp Hành</h2>
+        <div class="mode-switch">
+          <span style="font-size: 0.88rem; color: var(--text-muted);">Chế độ hiện tại:</span>
+          <button class="mode-btn" id="modeToggleBtn" onclick="toggleMode()">AUTO (Tự động)</button>
+        </div>
+      </div>
+
+      <div class="buttons-grid">
+        <div class="actuator-box">
+          <div class="actuator-info">
+            <h3>Quạt Thông Gió (LED Xanh - GPIO 18)</h3>
+            <div class="actuator-status">Trạng thái: <strong id="fanStatusText">TẮT</strong></div>
+          </div>
+          <button type="button" class="control-btn fan-btn" id="btnFan" onclick="toggleActuator('fan')">
+            BẬT QUẠT
+          </button>
+        </div>
+
+        <div class="actuator-box">
+          <div class="actuator-info">
+            <h3>Máy Bơm Nước (LED Đỏ - GPIO 19)</h3>
+            <div class="actuator-status">Trạng thái: <strong id="pumpStatusText">TẮT</strong></div>
+          </div>
+          <button type="button" class="control-btn pump-btn" id="btnPump" onclick="toggleActuator('pump')">
+            BẬT MÁY BƠM
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2 Biểu đồ cập nhật thời gian thực -->
+    <section class="charts-grid">
+      <div class="chart-card">
+        <h3>Biểu đồ Nồng Độ Khí Gas (%) theo thời gian thực</h3>
+        <div class="chart-wrapper">
+          <canvas id="gasChart"></canvas>
+        </div>
+      </div>
+
+      <div class="chart-card">
+        <h3>Biểu đồ Nhiệt Độ (°C) theo thời gian thực</h3>
+        <div class="chart-wrapper">
+          <canvas id="tempChart"></canvas>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    // ============================================================
+    // TRẠNG THÁI ỨNG DỤNG & KHỞI TẠO BIỂU ĐỒ CHART.JS
+    // ============================================================
+    let client = null;
+    let simInterval = null;
+    const state = {
+      mode: 'auto',
+      fan: false,
+      pump: false
+    };
+
+    const MAX_POINTS = 20;
+
+    function createRealtimeChart(canvasId, label, color, suggestedMax) {
+      const ctx = document.getElementById(canvasId).getContext('2d');
+      return new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: [],
+          datasets: [{
+            label: label,
+            data: [],
+            borderColor: color,
+            backgroundColor: color + '22',
+            borderWidth: 2.5,
+            tension: 0.35,
+            fill: true,
+            pointRadius: 3
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: { duration: 250 },
+          scales: {
+            x: {
+              ticks: { color: '#94a3b8', maxRotation: 0 },
+              grid: { color: '#33415555' }
+            },
+            y: {
+              beginAtZero: true,
+              suggestedMax: suggestedMax,
+              ticks: { color: '#94a3b8' },
+              grid: { color: '#33415555' }
+            }
+          },
+          plugins: {
+            legend: { labels: { color: '#e2e8f0' } }
+          }
+        }
+      });
+    }
+
+    const gasChart = createRealtimeChart('gasChart', 'Khí Gas (%)', '#f59e0b', 100);
+    const tempChart = createRealtimeChart('tempChart', 'Nhiệt độ (°C)', '#ef4444', 60);
+
+    function pushChartPoint(chart, label, value) {
+      chart.data.labels.push(label);
+      chart.data.datasets[0].data.push(value);
+      if (chart.data.labels.length > MAX_POINTS) {
+        chart.data.labels.shift();
+        chart.data.datasets[0].data.shift();
+      }
+      chart.update();
+    }
+
+    // ============================================================
+    // CẬP NHẬT GIAO DIỆN TỪ GÓI TIN MQTT
+    // ============================================================
+    function updateDashboard(data) {
+      const gasVal = Number(data.gas ?? 0).toFixed(1);
+      const gasPpm = Number(data.gas_ppm ?? 0);
+      const tempVal = Number(data.temp ?? 0).toFixed(1);
+
+      // Cập nhật trực tiếp vào 2 thẻ HTML sử dụng selector theo class
+      const gasEl = document.querySelector('.gas-value');
+      const tempEl = document.querySelector('.temp-value');
+      if (gasEl) gasEl.textContent = `${gasVal} %`;
+      if (tempEl) tempEl.textContent = `${tempVal} °C`;
+
+      document.getElementById('gasPpmText').textContent = gasPpm;
+
+      // Trạng thái cảnh báo
+      const gasAlert = Boolean(data.gas_alert ?? (Number(gasVal) >= 50));
+      const tempAlert = Boolean(data.temp_alert ?? (Number(tempVal) >= 45));
+
+      const gasBadge = document.getElementById('gasBadge');
+      gasBadge.textContent = gasAlert ? 'VƯỢT NGƯỠNG!' : 'An toàn';
+      gasBadge.className = gasAlert ? 'badge danger' : 'badge';
+
+      const tempBadge = document.getElementById('tempBadge');
+      tempBadge.textContent = tempAlert ? 'QUÁ NHIỆT!' : 'Bình thường';
+      tempBadge.className = tempAlert ? 'badge danger' : 'badge';
+
+      const alertBanner = document.getElementById('alertBanner');
+      if (gasAlert || tempAlert) {
+        const reasons = [];
+        if (gasAlert) reasons.push(`Khí Gas cao (${gasVal}%)`);
+        if (tempAlert) reasons.push(`Nhiệt độ cao (${tempVal}°C)`);
+        document.getElementById('alertText').textContent = `CẢNH BÁO CHÁY / RÒ RỈ: ${reasons.join(' & ')}`;
+        document.getElementById('alertTime').textContent = new Date().toLocaleTimeString('vi-VN');
+        alertBanner.classList.add('active');
+      } else {
+        alertBanner.classList.remove('active');
+      }
+
+      // Đồng bộ trạng thái cơ cấu chấp hành & chế độ từ ESP32
+      if (typeof data.mode === 'string') state.mode = data.mode;
+      if (typeof data.fan === 'boolean') state.fan = data.fan;
+      if (typeof data.pump === 'boolean') state.pump = data.pump;
+      renderControls();
+
+      // Cập nhật 2 biểu đồ thời gian thực
+      const timeLabel = new Date().toLocaleTimeString('vi-VN', { hour12: false });
+      pushChartPoint(gasChart, timeLabel, Number(gasVal));
+      pushChartPoint(tempChart, timeLabel, Number(tempVal));
+    }
+
+    function renderControls() {
+      const modeBtn = document.getElementById('modeToggleBtn');
+      if (state.mode === 'manual') {
+        modeBtn.textContent = 'MANUAL (Thủ công)';
+        modeBtn.classList.add('manual');
+      } else {
+        modeBtn.textContent = 'AUTO (Tự động)';
+        modeBtn.classList.remove('manual');
+      }
+
+      const btnFan = document.getElementById('btnFan');
+      const fanText = document.getElementById('fanStatusText');
+      if (state.fan) {
+        btnFan.classList.add('active');
+        btnFan.textContent = 'TẮT QUẠT';
+        fanText.textContent = 'ĐANG BẬT';
+        fanText.className = 'on';
+      } else {
+        btnFan.classList.remove('active');
+        btnFan.textContent = 'BẬT QUẠT';
+        fanText.textContent = 'TẮT';
+        fanText.className = '';
+      }
+
+      const btnPump = document.getElementById('btnPump');
+      const pumpText = document.getElementById('pumpStatusText');
+      if (state.pump) {
+        btnPump.classList.add('active');
+        btnPump.textContent = 'TẮT MÁY BƠM';
+        pumpText.textContent = 'ĐANG BẬT';
+        pumpText.className = 'on';
+      } else {
+        btnPump.classList.remove('active');
+        btnPump.textContent = 'BẬT MÁY BƠM';
+        pumpText.textContent = 'TẮT';
+        pumpText.className = '';
+      }
+    }
+
+    // ============================================================
+    // KẾT NỐI MQTT BROKER & GỬI LỆNH ĐIỀU KHIỂN
+    // ============================================================
+    function setConnectionStatus(connected, text) {
+      const dot = document.getElementById('mqttDot');
+      const label = document.getElementById('mqttStatusText');
+      dot.classList.toggle('connected', connected);
+      label.textContent = text;
+    }
+
+    function connectMQTT() {
+      if (client) {
+        client.end(true);
+      }
+
+      const brokerUrl = document.getElementById('brokerInput').value.trim();
+      const topicData = document.getElementById('topicDataInput').value.trim();
+      setConnectionStatus(false, 'Đang kết nối Broker...');
+
+      client = mqtt.connect(brokerUrl, {
+        clientId: 'WebFireAlarm_' + Math.random().toString(16).slice(2, 8),
+        clean: true,
+        reconnectPeriod: 3000
+      });
+
+      client.on('connect', () => {
+        setConnectionStatus(true, 'Đã kết nối MQTT Broker');
+        client.subscribe(topicData, (err) => {
+          if (err) console.error('Subscribe error:', err);
+        });
+      });
+
+      client.on('message', (topic, message) => {
+        if (topic === document.getElementById('topicDataInput').value.trim()) {
+          try {
+            const payload = JSON.parse(message.toString());
+            updateDashboard(payload);
+          } catch (e) {
+            console.error('JSON parse error:', e);
+          }
+        }
+      });
+
+      client.on('error', (err) => {
+        console.error('MQTT error:', err);
+        setConnectionStatus(false, 'Lỗi kết nối MQTT');
+      });
+
+      client.on('close', () => {
+        setConnectionStatus(false, 'Mất kết nối MQTT');
+      });
+    }
+
+    function publishControl(payloadObj) {
+      const topicCtrl = document.getElementById('topicCtrlInput').value.trim();
+      if (client && client.connected) {
+        client.publish(topicCtrl, JSON.stringify(payloadObj));
+      }
+    }
+
+    function toggleMode() {
+      state.mode = state.mode === 'auto' ? 'manual' : 'auto';
+      renderControls();
+      publishControl({
+        mode: state.mode,
+        fan: state.fan,
+        pump: state.pump
+      });
+    }
+
+    function toggleActuator(target) {
+      state.mode = 'manual';
+      if (target === 'fan') {
+        state.fan = !state.fan;
+      } else if (target === 'pump') {
+        state.pump = !state.pump;
+      }
+      renderControls();
+      publishControl({
+        mode: 'manual',
+        fan: state.fan,
+        pump: state.pump
+      });
+    }
+
+    // ============================================================
+    // CHẾ ĐỘ DEMO GIẢ LẬP TEST NHANH KHI CHƯA BẬT WOKWI
+    // ============================================================
+    function toggleSimulation() {
+      const btn = document.getElementById('simBtn');
+      if (simInterval) {
+        clearInterval(simInterval);
+        simInterval = null;
+        btn.textContent = 'Chạy Demo Giả Lập';
+        return;
+      }
+
+      btn.textContent = 'Dừng Demo Giả Lập';
+      let step = 0;
+      simInterval = setInterval(() => {
+        step++;
+        const simGas = Number((25 + Math.abs(Math.sin(step * 0.45)) * 45).toFixed(1));
+        const simTemp = Number((28 + Math.abs(Math.cos(step * 0.35)) * 25).toFixed(1));
+        const gasAlert = simGas >= 50;
+        const tempAlert = simTemp >= 45;
+
+        updateDashboard({
+          gas: simGas,
+          gas_ppm: Math.round(simGas * 100),
+          temp: simTemp,
+          mode: state.mode,
+          fan: state.mode === 'manual' ? state.fan : gasAlert,
+          pump: state.mode === 'manual' ? state.pump : tempAlert,
+          gas_alert: gasAlert,
+          temp_alert: tempAlert
+        });
+      }, 1500);
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      renderControls();
+      connectMQTT();
+    });
+  </script>
+</body>
+</html>
+
